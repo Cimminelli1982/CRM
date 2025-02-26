@@ -1,15 +1,20 @@
 {
-  "name": "crm-airtable",
+  "name": "crm",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": ">=14.0.0"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "echo 'No build step needed'"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@supabase/supabase-js": "^2.0.0",
     "airtable": "^0.12.2",
     "node-fetch": "^2.7.0"
   }
