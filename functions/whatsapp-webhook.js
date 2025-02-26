@@ -44,20 +44,14 @@ async function findContactByPhone(phoneNumber) {
   try {
     const formattedPhone = formatPhoneNumber(phoneNumber);
     const { data, error } = await supabase
-      .from('contacts')  // Lowercase table name
+      .from('contacts')
       .select('*')
       .eq('mobile', formattedPhone)
       .limit(1);
 
     if (error) throw error;
 
-    if (data.length > 0) {
-      console.log(`Found contact: ${data[0].first_name || ''} ${data[0].last_name || ''}`);
-      return data[0];
-    }
-
-    console.log('No matching contact found');
-    return null;
+    return data.length > 0 ? data[0] : null;
   } catch (error) {
     logError('findContactByPhone', error, { phoneNumber });
     return null;
@@ -88,13 +82,12 @@ async function createContact(phoneNumber, name = null) {
     };
 
     const { data, error } = await supabase
-      .from('contacts') // Lowercase table name
+      .from('contacts')
       .insert([contactData])
       .select();
 
     if (error) throw error;
 
-    console.log('Contact created successfully:', data[0].id);
     return data[0];
   } catch (error) {
     logError('createContact', error, { phoneNumber, name });
@@ -108,12 +101,11 @@ async function createInteraction(data) {
 
   try {
     const { data: result, error } = await supabase
-      .from('interactions') // Lowercase table name
+      .from('interactions')
       .insert([data]);
 
     if (error) throw error;
 
-    console.log('Interaction created successfully');
     return result;
   } catch (error) {
     logError('createInteraction', error, { data });
@@ -125,53 +117,29 @@ async function createInteraction(data) {
 function parseWhatsAppEvent(eventData) {
   console.log('Received webhook payload:', JSON.stringify(eventData, null, 2));
 
-  try {
-    if (eventData.chat?.is_group) {
-      console.log('Skipping group chat message');
-      return [];
-    }
-
-    if (!eventData.chat?.phone) {
-      console.log('Message without valid phone number, skipping');
-      return [];
-    }
-
-    if (eventData.message) {
-      console.log('Processing single message format (one-to-one chat)');
-      return [{
-        phoneNumber: eventData.chat.phone,
-        senderName: eventData.chat.full_name,
-        timestamp: eventData.message.timestamp,
-        direction: eventData.message.direction,
-        text: eventData.message.text,
-        messageId: eventData.message.message_uid
-      }];
-    }
-
-    throw new Error('Invalid webhook format received');
-  } catch (error) {
-    logError('parseWhatsAppEvent', error, { eventData });
-    throw error;
+  if (eventData.chat?.is_group || !eventData.chat?.phone) {
+    console.log('Skipping group chat message or missing phone number');
+    return [];
   }
+
+  if (eventData.message) {
+    return [{
+      phoneNumber: eventData.chat.phone,
+      senderName: eventData.chat.full_name,
+      timestamp: eventData.message.timestamp,
+      direction: eventData.message.direction,
+      text: eventData.message.text,
+      messageId: eventData.message.message_uid
+    }];
+  }
+
+  return [];
 }
 
 // Validate phone number
 function isValidPhoneNumber(phoneNumber) {
-  if (!phoneNumber) {
-    console.warn('Phone number is empty or undefined');
-    return false;
-  }
-
-  const cleaned = phoneNumber.replace(/\D/g, '');
-  const isValid = cleaned.length >= 10;
-
-  if (!isValid) {
-    console.warn(`Invalid phone number format: ${phoneNumber}`);
-  } else {
-    console.log(`Valid phone number: ${phoneNumber}`);
-  }
-
-  return isValid;
+  const cleaned = phoneNumber?.replace(/\D/g, '');
+  return cleaned?.length >= 10;
 }
 
 // Netlify function handler
@@ -190,18 +158,11 @@ exports.handler = async (event) => {
 
     for (const messageData of messages) {
       const { phoneNumber, senderName, timestamp, direction, text } = messageData;
-
-      if (!isValidPhoneNumber(phoneNumber)) {
-        continue;
-      }
+      if (!isValidPhoneNumber(phoneNumber)) continue;
 
       const formattedDate = formatTimestamp(timestamp);
-
       let contact = await findContactByPhone(phoneNumber);
-      if (!contact) {
-        contact = await createContact(phoneNumber, senderName);
-        console.log('Created new contact record from WhatsApp interaction');
-      }
+      if (!contact) contact = await createContact(phoneNumber, senderName);
 
       const interactionData = {
         iteration_date: formattedDate,
@@ -209,10 +170,10 @@ exports.handler = async (event) => {
         contact_mobile: formatPhoneNumber(phoneNumber),
         contact_email: contact ? contact.email : null,
         direction: direction === 'sent' ? 'Outbound' : 'Inbound',
-        note: text || '',
-        contact_id: contact ? contact.id : null
+        note: text || ''
       };
 
+      if (contact?.id) interactionData.contact_id = contact.id;
       await createInteraction(interactionData);
     }
 
