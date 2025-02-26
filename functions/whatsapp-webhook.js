@@ -1,9 +1,10 @@
 const fetch = require('node-fetch');
-const Airtable = require('airtable');
+const { createClient } = require('@supabase/supabase-js');
 
-// Initialize Airtable
-const base = new Airtable({apiKey: process.env.AIRTABLE_API_KEY}).base('appTMYAU4N43eJdxG');
-const interactionsTable = base('tblXub1Mg6RtXScPG');
+// Initialize Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 // Enhanced logging function
 function logError(context, error, additionalData = {}) {
@@ -19,21 +20,116 @@ function logError(context, error, additionalData = {}) {
   });
 }
 
-// Format phone number to match Airtable format
+// Format phone number to consistent format
 function formatPhoneNumber(phone) {
   if (!phone) return null;
-  // Remove any non-digit characters
-  const digits = phone.replace(/\D/g, '');
+  // Remove any non-digit characters except plus sign
+  const cleaned = phone.replace(/[^\d+]/g, '');
   // Always add + prefix if not present
-  return digits.startsWith('+') ? digits : `+${digits}`;
+  return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
 }
 
-// Format timestamp for Airtable Date field
+// Format timestamp for database Date field
 function formatTimestamp(timestamp) {
   // Parse the input timestamp
   const date = new Date(timestamp);
-  // Return just the date part in YYYY-MM-DD format
+  // Return ISO date string (YYYY-MM-DD)
   return date.toISOString().split('T')[0];
+}
+
+// Find contact by phone number in Supabase
+async function findContactByPhone(phoneNumber) {
+  console.log('Looking up contact with phone number:', phoneNumber);
+  
+  try {
+    const formattedPhone = formatPhoneNumber(phoneNumber);
+    
+    // Query the contacts table
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .eq('mobile', formattedPhone)
+      .limit(1);
+    
+    if (error) throw error;
+    
+    if (data && data.length > 0) {
+      console.log(`Found contact: ${data[0].first_name || ''} ${data[0].last_name || ''}`);
+      return data[0];
+    }
+    
+    console.log('No matching contact found');
+    return null;
+  } catch (error) {
+    logError('findContactByPhone', error, { phoneNumber });
+    console.log('Error looking up contact:', error.message);
+    return null;
+  }
+}
+
+// Create a new contact in Supabase
+async function createContact(phoneNumber, name = null) {
+  console.log('Creating new contact for phone number:', phoneNumber);
+  
+  try {
+    const formattedPhone = formatPhoneNumber(phoneNumber);
+    
+    // Try to extract first name and last name if a full name is provided
+    let firstName = null;
+    let lastName = null;
+    
+    if (name) {
+      const nameParts = name.split(' ');
+      if (nameParts.length > 1) {
+        firstName = nameParts[0];
+        lastName = nameParts.slice(1).join(' ');
+      } else {
+        firstName = name;
+      }
+    }
+    
+    // Prepare the contact data
+    const contactData = {
+      mobile: formattedPhone,
+      first_name: firstName,
+      last_name: lastName,
+      created_at: new Date().toISOString()
+    };
+    
+    // Insert the new contact
+    const { data, error } = await supabase
+      .from('contacts')
+      .insert([contactData])
+      .select();
+    
+    if (error) throw error;
+    
+    console.log('Contact created successfully:', data[0].id);
+    return data[0];
+  } catch (error) {
+    logError('createContact', error, { phoneNumber, name });
+    console.log('Error creating contact:', error.message);
+    return null;
+  }
+}
+
+// Create a new interaction record
+async function createInteraction(data) {
+  console.log('Creating interaction:', data);
+  
+  try {
+    const { data: result, error } = await supabase
+      .from('iterations')
+      .insert([data]);
+    
+    if (error) throw error;
+    
+    console.log('Interaction created successfully');
+    return result;
+  } catch (error) {
+    logError('createInteraction', error, { data });
+    throw error;
+  }
 }
 
 // Parse incoming WhatsApp event from TimelinesAI
@@ -41,9 +137,15 @@ function parseWhatsAppEvent(eventData) {
   console.log('Received webhook payload:', JSON.stringify(eventData, null, 2));
   
   try {
-    // Check if this is a group chat - if yes, return empty array to skip processing
+    // Check if this is a group chat - if yes, skip
     if (eventData.chat && eventData.chat.is_group === true) {
       console.log('Skipping group chat message');
+      return [];
+    }
+    
+    // Check if phone number exists
+    if (!eventData.chat || !eventData.chat.phone) {
+      console.log('Message without valid phone number, skipping');
       return [];
     }
     
@@ -52,6 +154,7 @@ function parseWhatsAppEvent(eventData) {
       console.log('Processing single message format (one-to-one chat)');
       return [{
         phoneNumber: eventData.chat.phone,
+        senderName: eventData.chat.full_name,
         timestamp: eventData.message.timestamp,
         direction: eventData.message.direction,
         text: eventData.message.text,
@@ -107,62 +210,43 @@ exports.handler = async (event, context) => {
     }
     
     for (const messageData of messages) {
-      const { phoneNumber, timestamp, direction, text } = messageData;
+      const { phoneNumber, senderName, timestamp, direction, text } = messageData;
       
       if (!isValidPhoneNumber(phoneNumber)) {
         continue;
       }
 
-      // Format the timestamp for Airtable
+      // Format the timestamp for the database
       const formattedDate = formatTimestamp(timestamp);
       
-      // Create a minimal record with just the fields we're confident about
+      // Look up contact by phone number
+      let contact = await findContactByPhone(phoneNumber);
+      
+      // If no contact found, create a new one
+      if (!contact) {
+        contact = await createContact(phoneNumber, senderName);
+        console.log('Created new contact record from WhatsApp interaction');
+      }
+      
+      // Create the interaction data
       const interactionData = {
-        'Interaction Date': formattedDate,
-        'Contact Mobile': formatPhoneNumber(phoneNumber),
-        'Direction': direction === 'sent' ? 'Outbound' : 'Inbound',
-        'Notes': text || ''
+        iteration_date: formattedDate,
+        Interaction_type: 'WhatsApp',
+        Contact_mobile: formatPhoneNumber(phoneNumber),
+        Direction: direction === 'sent' ? 'Outbound' : 'Inbound',
+        Note: text || ''
       };
       
-      // Try to add Interaction type if configured correctly
-      try {
-        // First try with lowercase 't'
-        interactionData['Interaction type'] = 'WhatsApp';
-        
-        console.log('Creating interaction with data:', interactionData);
-        await interactionsTable.create(interactionData);
-        console.log('Successfully created interaction record');
-      } catch (error) {
-        // If that fails, try with uppercase 'T'
-        if (error.message.includes('Unknown field name: "Interaction type"')) {
-          delete interactionData['Interaction type'];
-          interactionData['Interaction Type'] = 'WhatsApp';
-          
-          try {
-            console.log('Retrying with uppercase T:', interactionData);
-            await interactionsTable.create(interactionData);
-            console.log('Successfully created interaction record with uppercase T');
-          } catch (retryError) {
-            // If both fail, try without the field at all
-            if (retryError.message.includes('Unknown field name')) {
-              delete interactionData['Interaction Type'];
-              
-              try {
-                console.log('Retrying without interaction type field:', interactionData);
-                await interactionsTable.create(interactionData);
-                console.log('Successfully created minimal interaction record');
-              } catch (finalError) {
-                logError('finalCreateAttempt', finalError, { interactionData });
-                throw finalError;
-              }
-            } else {
-              throw retryError;
-            }
-          }
-        } else {
-          throw error;
+      // Link to the contact if we have one (either found or newly created)
+      if (contact) {
+        interactionData.contact_id = contact.id;
+        if (contact.email) {
+          interactionData.Contact_email = contact.email;
         }
       }
+      
+      // Create the interaction record
+      await createInteraction(interactionData);
     }
 
     return {
