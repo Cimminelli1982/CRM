@@ -27,14 +27,9 @@ function formatPhoneNumber(phone) {
   return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
 }
 
-// Format timestamp to 'YYYY, MONTH DD'
+// Format timestamp to 'YYYY-MM-DD' for date type
 function formatTimestamp(timestamp) {
-  const date = new Date(timestamp);
-  return date.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: '2-digit'
-  });
+  return new Date(timestamp).toISOString().split('T')[0]; // Outputs "2025-02-26"
 }
 
 // Find contact by phone number in Supabase
@@ -97,16 +92,24 @@ async function createContact(phoneNumber, name = null) {
 
 // Create a new interaction record in Supabase
 async function createInteraction(data) {
-  console.log('Creating interaction:', data);
+  console.log('Creating interaction with data:', JSON.stringify(data, null, 2));
 
   try {
-    const { data: result, error } = await supabase
+    const response = await supabase
       .from('interactions')
-      .insert([data]);
+      .insert([data])
+      .select();
 
-    if (error) throw error;
+    console.log('Supabase response:', JSON.stringify(response, null, 2)); // Debug log
 
-    return result;
+    const { data: result, error } = response;
+    if (error) {
+      console.log('Supabase error details:', JSON.stringify(error, null, 2)); // Log error details
+      throw error;
+    }
+
+    console.log('Interaction created successfully:', result[0]);
+    return result[0];
   } catch (error) {
     logError('createInteraction', error, { data });
     throw error;
@@ -150,36 +153,44 @@ exports.handler = async (event) => {
 
   try {
     const body = JSON.parse(event.body);
+    console.log('Parsed event body:', JSON.stringify(body, null, 2)); // Extra logging
     const messages = parseWhatsAppEvent(body);
 
     if (messages.length === 0) {
+      console.log('No messages to process');
       return { statusCode: 200, body: JSON.stringify({ success: true, message: 'No individual chat messages to process' }) };
     }
 
     for (const messageData of messages) {
       const { phoneNumber, senderName, timestamp, direction, text } = messageData;
-      if (!isValidPhoneNumber(phoneNumber)) continue;
+      if (!isValidPhoneNumber(phoneNumber)) {
+        console.log(`Skipping invalid phone number: ${phoneNumber}`);
+        continue;
+      }
 
       const formattedDate = formatTimestamp(timestamp);
+      console.log(`Processing message from ${phoneNumber} on ${formattedDate}`);
+
       let contact = await findContactByPhone(phoneNumber);
-      if (!contact) contact = await createContact(phoneNumber, senderName);
+      if (!contact) {
+        console.log(`Contact not found, creating new one for ${phoneNumber}`);
+        contact = await createContact(phoneNumber, senderName);
+      }
 
-  const interactionData = {
-    iteraction_date: formattedDate,  // ✅ Matches database
-    "Iteraction_type": 'WhatsApp',  // ✅ Case-sensitive column name
-    contact_mobile: formatPhoneNumber(phoneNumber),
-    contact_email: contact ? contact.email : null,
-    direction: direction === 'sent' ? 'Outbound' : 'Inbound',
-    note: text || '',
-    contact_id: contact ? contact.id : null
-};
+      const interactionData = {
+        interaction_date: formattedDate, // Matches schema, outputs "2025-02-26"
+        interaction_type: 'WhatsApp',    // Matches schema
+        contact_mobile: formatPhoneNumber(phoneNumber),
+        contact_email: contact ? contact.email : null,
+        direction: direction === 'sent' ? 'Outbound' : 'Inbound',
+        note: text || '',
+        contact_id: contact ? contact.id : null
+      };
 
-
-
-      if (contact?.id) interactionData.contact_id = contact.id;
       await createInteraction(interactionData);
     }
 
+    console.log('All messages processed successfully');
     return { statusCode: 200, body: JSON.stringify({ success: true }) };
   } catch (error) {
     logError('webhookHandler', error, { eventBody: event.body });
