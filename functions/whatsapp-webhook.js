@@ -164,14 +164,16 @@ exports.handler = async (event) => {
       let contact = await findContactByPhone(phoneNumber);
       if (!contact) contact = await createContact(phoneNumber, senderName);
 
-      const interactionData = {
-        iteration_date: formattedDate,
-        interaction_type: 'WhatsApp',
-        contact_mobile: formatPhoneNumber(phoneNumber),
-        contact_email: contact ? contact.email : null,
-        direction: direction === 'sent' ? 'Outbound' : 'Inbound',
-        note: text || ''
-      };
+  const interactionData = {
+    iteraction_date: formattedDate, // ✅ Correct column name
+    iteraction_type: 'WhatsApp', // ✅ Fix column name typo
+    contact_mobile: formatPhoneNumber(phoneNumber),
+    contact_email: contact ? contact.email : null,
+    direction: direction === 'sent' ? 'Outbound' : 'Inbound',
+    note: text || '',
+    contact_id: contact ? contact.id : null
+  };
+
 
       if (contact?.id) interactionData.contact_id = contact.id;
       await createInteraction(interactionData);
