@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const privateAppToken = '3eda2c14-0d71-4423-b1e4-ef0b4843393c'; // Fake token, replace with real
+const privateAppToken = 'pat-eu1-cdd36ab0-067e-445f-bc9d-7fe61d7c21c9'; 
 const appId = '8648799'; // Your App ID
 const webhookUrl = 'https://crm-superbase.netlify.app/.netlify/functions/hubspot-webhook';
 
