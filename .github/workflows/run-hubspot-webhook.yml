@@ -1,0 +1,24 @@
+name: Run HubSpot Webhook Setup
+
+on:
+  workflow_dispatch: # Allows you to manually trigger this workflow from the GitHub Actions tab
+
+jobs:
+  setup-webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20' # Use a recent Node.js version
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run setup script
+        run: npm run setup
+        env:
+          NODE_ENV: production
