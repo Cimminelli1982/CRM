@@ -44,9 +44,9 @@ async function findContactByPhone(phoneNumber) {
   try {
     const formattedPhone = formatPhoneNumber(phoneNumber);
     
-    // Query the contacts table
+    // Query the Contacts table
     const { data, error } = await supabase
-      .from('contacts')
+      .from('Contacts')
       .select('*')
       .eq('mobile', formattedPhone)
       .limit(1);
@@ -93,12 +93,13 @@ async function createContact(phoneNumber, name = null) {
       mobile: formattedPhone,
       first_name: firstName,
       last_name: lastName,
-      created_at: new Date().toISOString()
+      contact_category: null, // You can add logic to set this if needed
+      email: null // You can add logic to set this if needed
     };
     
     // Insert the new contact
     const { data, error } = await supabase
-      .from('contacts')
+      .from('Contacts')
       .insert([contactData])
       .select();
     
@@ -119,7 +120,7 @@ async function createInteraction(data) {
   
   try {
     const { data: result, error } = await supabase
-      .from('iterations')
+      .from('Interactions')
       .insert([data]);
     
     if (error) throw error;
@@ -233,17 +234,11 @@ exports.handler = async (event, context) => {
         iteration_date: formattedDate,
         Interaction_type: 'WhatsApp',
         Contact_mobile: formatPhoneNumber(phoneNumber),
+        Contact_email: contact ? contact.email : null,
         Direction: direction === 'sent' ? 'Outbound' : 'Inbound',
-        Note: text || ''
+        Note: text || '',
+        contact_id: contact ? contact.id : null
       };
-      
-      // Link to the contact if we have one (either found or newly created)
-      if (contact) {
-        interactionData.contact_id = contact.id;
-        if (contact.email) {
-          interactionData.Contact_email = contact.email;
-        }
-      }
       
       // Create the interaction record
       await createInteraction(interactionData);
