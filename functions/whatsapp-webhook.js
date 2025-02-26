@@ -178,8 +178,8 @@ exports.handler = async (event) => {
       }
 
       const interactionData = {
-        interaction_date: formattedDate, // Matches schema, outputs "2025-02-26"
-        interaction_type: 'WhatsApp',    // Matches schema
+        interaction_date: formattedDate, // Corrected to match schema
+        interaction_type: 'WhatsApp',    // Corrected to match schema
         contact_mobile: formatPhoneNumber(phoneNumber),
         contact_email: contact ? contact.email : null,
         direction: direction === 'sent' ? 'Outbound' : 'Inbound',
