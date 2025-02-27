@@ -1,0 +1,16 @@
+name: Email Sync Scheduler
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Run every 5 minutes
+  workflow_dispatch:       # Also allow manual trigger
+
+jobs:
+  trigger-function:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Email Sync
+        run: |
+          curl -L -X POST 'https://efazuvegwxouysfcgwja.supabase.co/functions/v1/email-sync' \
+          -H 'Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}' \
+          --data '{"name":"Functions"}'
