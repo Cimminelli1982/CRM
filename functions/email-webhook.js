@@ -78,6 +78,40 @@ async function createInteraction(interactionData) {
   }
 }
 
+/**
+ * Updates a contact's last_interaction date if the new date is more recent
+ * @param {number} contactId - The ID of the contact to update
+ * @param {string} interactionDate - The date of the interaction in ISO format
+ */
+async function updateContactLastInteraction(contactId, interactionDate) {
+  try {
+    // First get the current contact information
+    const { data: contact, error: fetchError } = await supabase
+      .from('contacts')
+      .select('last_interaction')
+      .eq('id', contactId)
+      .single();
+    
+    if (fetchError) throw fetchError;
+    
+    // Only update if the new interaction date is more recent than the current last_interaction
+    // or if last_interaction is null
+    if (!contact.last_interaction || new Date(interactionDate) > new Date(contact.last_interaction)) {
+      const { error: updateError } = await supabase
+        .from('contacts')
+        .update({ last_interaction: interactionDate })
+        .eq('id', contactId);
+      
+      if (updateError) throw updateError;
+      console.log(`Updated contact ${contactId} last_interaction to ${interactionDate}`);
+    }
+  } catch (error) {
+    console.error(`Error updating contact last_interaction: ${error.message}`);
+    // We don't want to fail the whole webhook if just this update fails
+    // So we log the error but don't rethrow it
+  }
+}
+
 // Netlify function handler
 exports.handler = async (event, context) => {
   // Only allow POST requests
@@ -118,6 +152,14 @@ exports.handler = async (event, context) => {
 
     // Create interaction
     await createInteraction(interactionData);
+    
+    // Update the contact's last_interaction date
+    if (interactionData.contact_id && interactionData.interaction_date) {
+      await updateContactLastInteraction(
+        interactionData.contact_id,
+        interactionData.interaction_date
+      );
+    }
 
     return {
       statusCode: 200,
