@@ -179,6 +179,8 @@ async function associateContactWithMeeting(googleCalendarId, contactId) {
  */
 async function updateContactLastInteraction(contactId) {
   try {
+    logMessage('log', 'updateContactLastInteraction', `Starting to update contact ${contactId} last_interaction to today`);
+    
     // Always use today's date, formatted as YYYY-MM-DD
     const todayFormatted = new Date().toISOString().split('T')[0];
     
@@ -235,16 +237,24 @@ exports.handler = async (event, context) => {
 
     // Process each attendee email
     for (const email of attendeeEmails) {
+      logMessage('log', 'handler', `Processing attendee email: ${email}`);
       contactPromises.push(
         findOrCreateContact(email)
           .then(contact => {
             if (contact) {
               contactIds.push(contact.id);
+              logMessage('log', 'handler', `Found/created contact for ${email}`, { contactId: contact.id });
               
               // Update last_interaction for each contact with today's date
               updateContactLastInteraction(contact.id);
+            } else {
+              logMessage('warn', 'handler', `Could not find or create contact for ${email}`);
             }
             return contact;
+          })
+          .catch(error => {
+            logError('handler', error, { email });
+            return null;
           })
       );
     }
