@@ -174,37 +174,23 @@ async function associateContactWithMeeting(googleCalendarId, contactId) {
 }
 
 /**
- * Updates a contact's last_interaction date if the new date is more recent
+ * Updates a contact's last_interaction date to today's date
  * @param {number} contactId - The ID of the contact to update
- * @param {string} interactionDate - The date of the interaction in ISO format
  */
-async function updateContactLastInteraction(contactId, interactionDate) {
+async function updateContactLastInteraction(contactId) {
   try {
-    // Format date properly
-    const formattedDate = formatDate(interactionDate);
+    // Always use today's date, formatted as YYYY-MM-DD
+    const todayFormatted = new Date().toISOString().split('T')[0];
     
-    // First get the current contact information
-    const { data: contact, error: fetchError } = await supabase
+    const { error: updateError } = await supabase
       .from('contacts')
-      .select('last_interaction')
-      .eq('id', contactId)
-      .single();
+      .update({ last_interaction: todayFormatted })
+      .eq('id', contactId);
     
-    if (fetchError) throw fetchError;
-    
-    // Only update if the new interaction date is more recent than the current last_interaction
-    // or if last_interaction is null
-    if (!contact.last_interaction || new Date(formattedDate) > new Date(contact.last_interaction)) {
-      const { error: updateError } = await supabase
-        .from('contacts')
-        .update({ last_interaction: formattedDate })
-        .eq('id', contactId);
-      
-      if (updateError) throw updateError;
-      logMessage('log', 'updateContactLastInteraction', `Updated contact ${contactId} last_interaction to ${formattedDate}`);
-    }
+    if (updateError) throw updateError;
+    logMessage('log', 'updateContactLastInteraction', `Updated contact ${contactId} last_interaction to today (${todayFormatted})`);
   } catch (error) {
-    logError('updateContactLastInteraction', error, { contactId, interactionDate });
+    logError('updateContactLastInteraction', error, { contactId });
     // We don't want to fail the whole webhook if just this update fails
     // So we log the error but don't rethrow it
   }
@@ -256,7 +242,7 @@ exports.handler = async (event, context) => {
               contactIds.push(contact.id);
               
               // Update last_interaction for each contact with today's date
-              updateContactLastInteraction(contact.id, new Date().toISOString());
+              updateContactLastInteraction(contact.id);
             }
             return contact;
           })
