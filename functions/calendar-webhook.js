@@ -255,10 +255,8 @@ exports.handler = async (event, context) => {
             if (contact) {
               contactIds.push(contact.id);
               
-              // Update last_interaction for each contact
-              if (webhookData.event_date) {
-                updateContactLastInteraction(contact.id, webhookData.event_date);
-              }
+              // Update last_interaction for each contact with today's date
+              updateContactLastInteraction(contact.id, new Date().toISOString());
             }
             return contact;
           })
